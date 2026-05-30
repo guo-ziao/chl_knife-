@@ -1,0 +1,442 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>飞刀大挑战</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#1a1a2e;display:flex;justify-content:center;align-items:center;height:100vh;font-family:"Segoe UI",Arial,sans-serif;overflow:hidden;user-select:none}
+  #gameContainer{position:relative;width:1100px;height:750px}
+  canvas{display:block;border-radius:12px;box-shadow:0 0 40px rgba(0,0,0,.5)}
+  #overlay{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;justify-content:center;align-items:center;pointer-events:none}
+  #overlay.active{pointer-events:all}
+  #title{font-size:48px;font-weight:900;color:#ff6b35;text-shadow:0 2px 10px rgba(255,107,53,.5);margin-bottom:4px}
+  #subtitle{font-size:17px;color:#ccc;margin-bottom:18px}
+  #modeSelect{display:flex;gap:16px;margin-bottom:8px}
+  .modeBtn{background:linear-gradient(135deg,#e67e22,#d35400);color:#fff;border:none;padding:14px 32px;font-size:18px;font-weight:700;border-radius:30px;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 4px 20px rgba(255,107,53,.4)}
+  .modeBtn:hover{transform:scale(1.05)}
+  .modeBtn.endless{background:linear-gradient(135deg,#9b59b6,#8e44ad)}
+  #gameOverText{font-size:36px;font-weight:900;color:#e74c3c;text-shadow:0 2px 10px rgba(231,76,60,.6);margin-bottom:10px}
+  #finalScore{font-size:22px;color:#f1c40f;margin-bottom:16px}
+  .hidden{display:none!important}
+  #shopPanel{position:fixed;left:calc(50vw - 570px);top:50%;transform:translateY(-50%);background:rgba(20,20,40,.93);border:2px solid #555;border-radius:14px;padding:16px;z-index:100;pointer-events:all;width:230px;max-height:560px;overflow-y:auto}
+  #shopPanel h3{color:#f1c40f;font-size:17px;text-align:center;margin-bottom:8px}
+  #coinDisplay{color:#f1c40f;font-size:14px;text-align:center;margin-bottom:10px}
+  .shopSection{margin-bottom:10px}
+  .shopSection h4{color:#aaa;font-size:13px;border-bottom:1px solid rgba(255,255,255,.1);padding-bottom:3px;margin-bottom:6px}
+  .shopItem{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:8px;margin-bottom:6px;text-align:center;transition:border-color .2s}
+  .shopItem:hover{border-color:#f1c40f}
+  .shopItem .skinName{color:#fff;font-size:13px;font-weight:700;margin-bottom:2px}
+  .shopItem .skinPreview{width:70px;height:32px;margin:4px auto;border-radius:4px}
+  .shopItem .skinPrice{color:#aaa;font-size:11px;margin-bottom:3px}
+  .shopItem button{padding:4px 14px;font-size:11px;font-weight:700;border-radius:12px;border:none;cursor:pointer;transition:.15s}
+  .shopItem button.buy{background:linear-gradient(135deg,#f1c40f,#e67e22);color:#000}
+  .shopItem button.equip{background:linear-gradient(135deg,#2ecc71,#27ae60);color:#fff}
+  .shopItem button.equipped{background:#555;color:#888;cursor:default}
+  .shopItem button.locked{background:#444;color:#777;cursor:not-allowed}
+  .shopItem button:hover:not(.locked):not(.equipped){transform:scale(1.08)}
+  ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#555;border-radius:2px}
+</style>
+</head>
+<body>
+<div id="gameContainer">
+  <canvas id="gameCanvas" width="1100" height="750"></canvas>
+  <div id="overlay" class="active">
+    <div id="title">🔪 飞刀大挑战</div>
+    <div id="subtitle">关卡模式：木板插刀通关 | 无尽模式：圆木转靶+技能</div>
+    <div id="coinShow" style="color:#f1c40f;font-size:17px;margin-bottom:10px">🪙 金币: 0</div>
+    <div id="modeSelect">
+      <button id="btnLevel" class="modeBtn">🏰 关卡模式</button>
+      <button id="btnEndless" class="modeBtn endless">♾️ 无尽模式</button>
+    </div>
+    <div id="gameOverText" class="hidden">💀 飞刀相撞！</div>
+    <div id="finalScore" class="hidden"></div>
+  </div>
+</div>
+<div id="shopPanel" class="hidden">
+  <h3>🏪 商城</h3>
+  <div id="coinDisplay">🪙 金币: 0</div>
+  <div class="shopSection"><h4>🔪 飞刀皮肤</h4><div id="knifeShopItems"></div></div>
+  <div class="shopSection"><h4>🪵 木板皮肤</h4><div id="boardShopItems"></div></div>
+</div>
+<script>
+const canvas=document.getElementById("gameCanvas"),ctx=canvas.getContext("2d");
+const W=canvas.width,H=canvas.height;
+const overlay=document.getElementById("overlay"),gameOverText=document.getElementById("gameOverText"),finalScore=document.getElementById("finalScore");
+const title=document.getElementById("title"),subtitle=document.getElementById("subtitle");
+const btnLevel=document.getElementById("btnLevel"),btnEndless=document.getElementById("btnEndless"),modeSelect=document.getElementById("modeSelect");
+const shopPanel=document.getElementById("shopPanel"),knifeShopItems=document.getElementById("knifeShopItems"),boardShopItems=document.getElementById("boardShopItems"),coinDisplay=document.getElementById("coinDisplay"),coinShow=document.getElementById("coinShow");
+
+// Skins
+const KNIFE_SKINS={
+  default:{name:"默认飞刀",price:0,desc:"经典钢刃",blade:["#f0f0f0","#e8e8e8","#b0b0b0"],center:"rgba(200,200,200,.6)",guard:["#f0d060","#d4af37","#a08020"],handle:["#4a2512","#6b3a1f","#5a3018","#3a1a0a"]},
+  gold:{name:"黄金飞刀",price:50,desc:"金光闪闪",blade:["#ffe680","#ffd700","#b8960c"],center:"rgba(255,220,100,.7)",guard:["#ffd700","#daa520","#8b6914"],handle:["#8b6914","#b8960c","#a08020","#6b4e0a"]},
+  silver:{name:"白银飞刀",price:35,desc:"冷冽银光",blade:["#e8e8f0","#c0c0d0","#9090a0"],center:"rgba(200,200,220,.7)",guard:["#d0d0e0","#b0b0c0","#808098"],handle:["#555","#777","#666","#444"]},
+  poison:{name:"毒龙飞刀",price:80,desc:"翠绿剧毒",blade:["#80f080","#40c040","#208020"],center:"rgba(100,255,100,.6)",guard:["#60d060","#40a040","#206020"],handle:["#1a3a0a","#2a5a18","#204010","#0a2000"]}
+};
+const BOARD_SKINS={
+  wood:{name:"原木板",price:0,desc:"经典松木",colors:["#c49a6c","#d4a87c","#b8845a","#c49060","#a07048","#c49a6c","#8B5E3C"],edge:"#3a1a0a"},
+  steel:{name:"钢板",price:60,desc:"坚不可摧",colors:["#8899aa","#99aabb","#778899","#8899aa","#667788","#8899aa","#556677"],edge:"#334455"},
+  redwood:{name:"红木板",price:40,desc:"名贵红木",colors:["#8b3a3a","#a05050","#7a3030","#904040","#6a2828","#8b3a3a","#5a2020"],edge:"#3a1010"}
+};
+let equippedKnife="default",equippedBoard="wood",coins=parseInt(localStorage.getItem("knifeCoins")||"0");
+let ownedKnives=JSON.parse(localStorage.getItem("knifeOwned")||'["default"]'),ownedBoards=JSON.parse(localStorage.getItem("boardOwned")||'["wood"]');
+function saveData(){localStorage.setItem("knifeCoins",coins);localStorage.setItem("knifeOwned",JSON.stringify(ownedKnives));localStorage.setItem("boardOwned",JSON.stringify(ownedBoards))}
+function addCoins(n){coins+=n;saveData();updateCoinDisplay();updateShop()}
+function updateCoinDisplay(){coinDisplay.textContent="🪙 金币: "+coins;coinShow.textContent="🪙 金币: "+coins}
+function renderShopSection(container,skins,equipped,owned,onEquip){
+  container.innerHTML="";
+  for(const[id,skin]of Object.entries(skins)){
+    const isOwned=owned.includes(id),isEquipped=id===equipped;
+    const div=document.createElement("div");div.className="shopItem";
+    const preview=document.createElement("canvas");preview.className="skinPreview";preview.width=70;preview.height=32;
+    const pc=preview.getContext("2d");
+    if(skin.colors){const bg=pc.createLinearGradient(0,0,70,0);bg.addColorStop(0,skin.colors[0]);bg.addColorStop(.3,skin.colors[1]);bg.addColorStop(.6,skin.colors[2]);bg.addColorStop(1,skin.colors[5]);pc.fillStyle=bg;pc.fillRect(2,4,66,24);pc.strokeStyle=skin.colors[6];pc.lineWidth=2;pc.strokeRect(2,4,66,24)}
+    else{const bg=pc.createLinearGradient(0,0,70,0);bg.addColorStop(0,skin.blade[0]);bg.addColorStop(.5,skin.blade[1]);bg.addColorStop(1,skin.blade[2]);pc.fillStyle=bg;pc.fillRect(0,10,44,12);pc.fillStyle=skin.guard[1];pc.fillRect(42,6,7,20);const hg=pc.createLinearGradient(50,0,70,0);hg.addColorStop(0,skin.handle[1]);hg.addColorStop(1,skin.handle[0]);pc.fillStyle=hg;pc.fillRect(49,9,19,15)}
+    div.innerHTML='<div class="skinName">'+skin.name+'</div><div class="skinPrice">'+skin.desc+'</div>';
+    div.appendChild(preview);
+    let btn;
+    if(isEquipped){btn=document.createElement("button");btn.className="equipped";btn.textContent="已装备"}
+    else if(isOwned){btn=document.createElement("button");btn.className="equip";btn.textContent="装备";btn.onclick=()=>{onEquip(id);updateShop()}}
+    else{btn=document.createElement("button");btn.className=coins>=skin.price?"buy":"locked";btn.textContent="🪙"+skin.price;if(coins>=skin.price)btn.onclick=()=>{coins-=skin.price;owned.push(id);saveData();updateShop()}}
+    div.appendChild(btn);container.appendChild(div);
+  }
+}
+function updateShop(){renderShopSection(knifeShopItems,KNIFE_SKINS,equippedKnife,ownedKnives,(id)=>{equippedKnife=id});renderShopSection(boardShopItems,BOARD_SKINS,equippedBoard,ownedBoards,(id)=>{equippedBoard=id});updateCoinDisplay()}
+function getKnifeSkin(){return KNIFE_SKINS[equippedKnife]}
+function getBoardSkin(){return BOARD_SKINS[equippedBoard]}
+
+// Game State
+let gameState="menu",gameMode="level",score=0,stuckKnives=[],flyingKnife=null,particles=[],sonicRings=[];
+let level=1,levelTarget=5,levelTransition=0,baseKnifeSpeed=2.2,hp=3,maxHp=3;
+let nextPowerUpScore=6,pendingPowerUp=false;
+let vibraniumActive=false,miniKnivesLeft=0,sonicActive=false,iceActive=false;
+const knifeStartX=80,flySpeed=9;
+let knifeY=H/2,knifeDir=1;
+let screenShake=0,shakeX=0,shakeY=0,comboCount=0,comboFlash=0,powerUpFlash=0,trailPoints=[];
+
+// Rect board (level)
+const boardX=740,boardW=160,boardH=560,boardY=(H-boardH)/2,boardTop=boardY,boardBottom=boardY+boardH,stickDepth=45;
+const knifeMinY=boardTop-20,knifeMaxY=boardBottom+20;
+
+// Circle log (endless)
+const logCX=720,logCY=375,logRadius=180;
+let logAngle=0;
+
+// Drawing helpers
+function circleAngleToXY(angle){return{x:logCX+Math.cos(angle+logAngle)*logRadius,y:logCY+Math.sin(angle+logAngle)*logRadius}}
+function angleDiff(a,b){let d=a-b;while(d>Math.PI)d-=Math.PI*2;while(d<-Math.PI)d+=Math.PI*2;return d}
+
+// Draw rect board
+function drawRectBoard(){
+  const bs=getBoardSkin(),bw=boardW,bh=boardH,bx=boardX,by=boardY;
+  const wg=ctx.createLinearGradient(bx,0,bx+bw,0);
+  for(let i=0;i<bs.colors.length;i++)wg.addColorStop(i/(bs.colors.length-1),bs.colors[i]);
+  ctx.fillStyle=wg;ctx.fillRect(bx,by,bw,bh);
+  ctx.strokeStyle="rgba(0,0,0,.06)";ctx.lineWidth=1;
+  for(let gy=by+8;gy<by+bh;gy+=9+Math.sin(gy*.3)*4){ctx.beginPath();ctx.moveTo(bx,gy);for(let gx=bx;gx<=bx+bw;gx+=10)ctx.lineTo(gx,gy+Math.sin(gx*.05+gy*.02)*2);ctx.stroke()}
+  ctx.fillStyle="rgba(0,0,0,.25)";ctx.fillRect(bx,by,5,bh);ctx.fillRect(bx+bw-5,by,5,bh);
+  ctx.fillStyle="rgba(0,0,0,.2)";ctx.fillRect(bx,by,bw,3);ctx.fillStyle="rgba(0,0,0,.3)";ctx.fillRect(bx,by+bh-3,bw,3);
+  ctx.strokeStyle=bs.edge;ctx.lineWidth=3;ctx.strokeRect(bx-1,by-1,bw+2,bh+2);
+  const cs=[[bx+10,by+10],[bx+bw-10,by+10],[bx+10,by+bh-10],[bx+bw-10,by+bh-10]];
+  for(const[nx,ny]of cs){ctx.fillStyle="#555";ctx.beginPath();ctx.arc(nx,ny,4,0,Math.PI*2);ctx.fill();ctx.fillStyle="#888";ctx.beginPath();ctx.arc(nx-1,ny-1,2.5,0,Math.PI*2);ctx.fill()}
+}
+
+// Draw circle log
+function drawCircleLog(){
+  const bs=getBoardSkin(),cx=logCX,cy=logCY,r=logRadius;
+  ctx.fillStyle=bs.edge;ctx.beginPath();ctx.arc(cx,cy,r+20,0,Math.PI*2);ctx.fill();
+  const wg=ctx.createRadialGradient(cx,cy,r*.3,cx,cy,r);
+  wg.addColorStop(0,bs.colors[0]);wg.addColorStop(.4,bs.colors[2]);wg.addColorStop(.7,bs.colors[5]);wg.addColorStop(1,bs.colors[6]);
+  ctx.fillStyle=wg;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle="rgba(0,0,0,.08)";ctx.lineWidth=1;
+  for(let rr=10;rr<r;rr+=16){ctx.beginPath();ctx.arc(cx,cy,rr,0,Math.PI*2);ctx.stroke()}
+  ctx.fillStyle=bs.edge;ctx.beginPath();ctx.arc(cx,cy,8,0,Math.PI*2);ctx.fill();
+}
+
+// Draw rect stuck knife
+function drawRectStuckKnife(y,depth,isMini){
+  const sk=getKnifeSkin(),tipX=boardX+depth,surfaceX=boardX,s=isMini?.55:1,vbl=60*s,gw=16*s,gh=4*s,hl=24*s,hw=10*s,bsx=surfaceX-vbl;
+  ctx.save();
+  ctx.strokeStyle="rgba(0,0,0,.5)";ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(surfaceX,y-5*s);ctx.lineTo(surfaceX,y+5*s);ctx.stroke();
+  ctx.strokeStyle="rgba(139,90,43,.5)";ctx.lineWidth=.8;for(let sd=-1;sd<=1;sd+=2){ctx.beginPath();ctx.moveTo(surfaceX,y+sd*4*s);ctx.lineTo(surfaceX+sd*4*s,y+sd*8*s);ctx.stroke()}
+  const bg=ctx.createLinearGradient(bsx,0,surfaceX,0);bg.addColorStop(0,sk.blade[0]);bg.addColorStop(1,sk.blade[1]);
+  ctx.fillStyle=bg;ctx.beginPath();ctx.moveTo(bsx,y-4.5*s);ctx.lineTo(surfaceX,y-4.5*s);ctx.lineTo(tipX,y);ctx.lineTo(surfaceX,y+4.5*s);ctx.lineTo(bsx,y+4.5*s);ctx.closePath();
+  ctx.fill();ctx.strokeStyle=sk.blade[2];ctx.lineWidth=.8;ctx.stroke();
+  ctx.strokeStyle=sk.center;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(bsx+4*s,y);ctx.lineTo(surfaceX-4*s,y);ctx.stroke();
+  ctx.fillStyle="rgba(255,255,255,.25)";ctx.beginPath();ctx.moveTo(bsx,y-1*s);ctx.lineTo(surfaceX,y-3*s);ctx.lineTo(tipX-8*s,y-1*s);ctx.lineTo(tipX,y);ctx.lineTo(bsx,y);ctx.closePath();ctx.fill();
+  const gx=bsx,gg=ctx.createLinearGradient(0,y-gh,0,y+gh);gg.addColorStop(0,sk.guard[0]);gg.addColorStop(.5,sk.guard[1]);gg.addColorStop(1,sk.guard[2]);
+  ctx.fillStyle=gg;ctx.fillRect(gx-gw/2,y-gh,gw,gh*2);ctx.strokeStyle="#8a6a10";ctx.lineWidth=.8;ctx.strokeRect(gx-gw/2,y-gh,gw,gh*2);
+  const hx=gx-hl,hg=ctx.createLinearGradient(hx,0,gx,0);hg.addColorStop(0,sk.handle[0]);hg.addColorStop(.4,sk.handle[1]);hg.addColorStop(.7,sk.handle[2]);hg.addColorStop(1,sk.handle[3]);
+  ctx.fillStyle=hg;ctx.fillRect(hx,y-hw/2,hl,hw);ctx.strokeStyle="#2a1000";ctx.lineWidth=.8;ctx.strokeRect(hx,y-hw/2,hl,hw);
+  ctx.fillStyle="#b09050";for(let hh=hx+2;hh<gx-4;hh+=4)ctx.fillRect(hh,y-hw/2,3,hw);
+  ctx.strokeStyle="rgba(0,0,0,.25)";ctx.lineWidth=.5;for(let hh=hx+2;hh<gx-4;hh+=4)ctx.strokeRect(hh,y-hw/2,3,hw);
+  ctx.fillStyle="#777";ctx.fillRect(hx-4,y-hw/2-1,5,hw+2);ctx.strokeStyle="#444";ctx.lineWidth=.8;ctx.strokeRect(hx-4,y-hw/2-1,5,hw+2);
+  ctx.restore();
+}
+
+// Draw circle stuck knife - tip embedded in log, handle visible outside
+function drawCircleStuckKnife(angle,isMini){
+  const s=isMini?.55:1,sk=getKnifeSkin();
+  const bl=75*s,bw=9*s,hl=24*s,hw=10*s,gw=16*s,gh=4*s;
+  const totalLen=bl+gw+hl+5*s;
+  const embedDepth=30*s;
+  const offset=logRadius-embedDepth;
+  const cx=logCX+Math.cos(angle+logAngle)*offset;
+  const cy=logCY+Math.sin(angle+logAngle)*offset;
+  ctx.save();ctx.translate(cx,cy);
+  // Point outward from center (handle near surface, tip away)
+  ctx.rotate(angle+logAngle);
+  // Draw entry slit
+  ctx.strokeStyle="rgba(0,0,0,.4)";ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(0,-bw/2-2);ctx.lineTo(0,bw/2+2);ctx.stroke();
+  // Blade (from surface outward)
+  const bg=ctx.createLinearGradient(0,-bw/2,bl,0);bg.addColorStop(0,sk.blade[0]);bg.addColorStop(.5,sk.blade[1]);bg.addColorStop(1,sk.blade[2]);
+  ctx.fillStyle=bg;ctx.beginPath();ctx.moveTo(bl,0);ctx.lineTo(bl-12*s,-bw/2);ctx.lineTo(0,-bw/2);ctx.lineTo(0,bw/2);ctx.lineTo(bl-12*s,bw/2);ctx.closePath();ctx.fill();ctx.strokeStyle="#888";ctx.lineWidth=.8;ctx.stroke();
+  ctx.strokeStyle=sk.center;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(bl-8*s,0);ctx.lineTo(6*s,0);ctx.stroke();
+  ctx.fillStyle="rgba(255,255,255,.3)";ctx.beginPath();ctx.moveTo(bl,0);ctx.lineTo(bl-10*s,-1*s);ctx.lineTo(2*s,-bw/2+1);ctx.lineTo(0,-bw/2+1);ctx.lineTo(0,-bw/5);ctx.lineTo(bl-10*s,bw/5);ctx.lineTo(bl,0);ctx.closePath();ctx.fill();
+  // Guard
+  const gg=ctx.createLinearGradient(0,-gh,0,gh);gg.addColorStop(0,sk.guard[0]);gg.addColorStop(.5,sk.guard[1]);gg.addColorStop(1,sk.guard[2]);ctx.fillStyle=gg;ctx.fillRect(-gw/2,-gh,gw,gh*2);ctx.strokeStyle="#8a6a10";ctx.lineWidth=.8;ctx.strokeRect(-gw/2,-gh,gw,gh*2);
+  // Handle (extends away from log, negative x)
+  const hg=ctx.createLinearGradient(-hl,0,0,0);hg.addColorStop(0,sk.handle[0]);hg.addColorStop(.4,sk.handle[1]);hg.addColorStop(.7,sk.handle[2]);hg.addColorStop(1,sk.handle[3]);
+  ctx.fillStyle=hg;ctx.fillRect(-hl,-hw/2,hl,hw);ctx.strokeStyle="#2a1000";ctx.lineWidth=.8;ctx.strokeRect(-hl,-hw/2,hl,hw);
+  ctx.fillStyle="#b09050";for(let hx=-hl+2;hx<0;hx+=4*s)ctx.fillRect(hx,-hw/2,3*s,hw);
+  ctx.strokeStyle="rgba(0,0,0,.25)";ctx.lineWidth=.5;for(let hx=-hl+2;hx<0;hx+=4*s)ctx.strokeRect(hx,-hw/2,3*s,hw);
+  ctx.fillStyle="#888";ctx.fillRect(-hl-3*s,-hw/2-1,5*s,hw+2);ctx.strokeStyle="#555";ctx.lineWidth=.8;ctx.strokeRect(-hl-3*s,-hw/2-1,5*s,hw+2);
+  ctx.restore();
+}
+
+// Draw flying knife
+function drawFlyingKnife(x,y,isMini,isVibranium,isIce){
+  ctx.save();ctx.translate(x,y);
+  const sk=getKnifeSkin(),s=isMini?.55:1,bl=75*s,bw=9*s,hl=24*s,hw=10*s,gw=16*s,gh=4*s;
+  if(isVibranium){ctx.shadowColor="#9b59b6";ctx.shadowBlur=20}if(isIce){ctx.shadowColor="#00c8ff";ctx.shadowBlur=20}
+  const bg=ctx.createLinearGradient(0,-bw/2,bl,0);bg.addColorStop(0,isVibranium?"#d4b8f0":isIce?"#b8e8ff":sk.blade[0]);bg.addColorStop(.5,isVibranium?"#b088e0":isIce?"#80d8f0":sk.blade[1]);bg.addColorStop(1,isVibranium?"#7b5ea7":isIce?"#50a8c8":sk.blade[2]);
+  ctx.fillStyle=bg;ctx.beginPath();ctx.moveTo(bl,0);ctx.lineTo(bl-12*s,-bw/2);ctx.lineTo(0,-bw/2);ctx.lineTo(0,bw/2);ctx.lineTo(bl-12*s,bw/2);ctx.closePath();ctx.fill();ctx.strokeStyle="#888";ctx.lineWidth=.8;ctx.stroke();
+  ctx.strokeStyle=isVibranium?"rgba(180,130,220,.7)":isIce?"rgba(100,200,240,.7)":sk.center;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(bl-8*s,0);ctx.lineTo(6*s,0);ctx.stroke();
+  ctx.fillStyle="rgba(255,255,255,.3)";ctx.beginPath();ctx.moveTo(bl,0);ctx.lineTo(bl-10*s,-1*s);ctx.lineTo(2*s,-bw/2+1);ctx.lineTo(0,-bw/2+1);ctx.lineTo(0,-bw/5);ctx.lineTo(bl-10*s,bw/5);ctx.lineTo(bl,0);ctx.closePath();ctx.fill();
+  const gg=ctx.createLinearGradient(0,-gh,0,gh);gg.addColorStop(0,sk.guard[0]);gg.addColorStop(.5,sk.guard[1]);gg.addColorStop(1,sk.guard[2]);ctx.fillStyle=gg;ctx.fillRect(-gw/2,-gh,gw,gh*2);ctx.strokeStyle="#8a6a10";ctx.lineWidth=.8;ctx.strokeRect(-gw/2,-gh,gw,gh*2);
+  const hg=ctx.createLinearGradient(-hl/2,0,hl/2,0);hg.addColorStop(0,sk.handle[0]);hg.addColorStop(.3,sk.handle[1]);hg.addColorStop(.6,sk.handle[2]);hg.addColorStop(1,sk.handle[3]);ctx.fillStyle=hg;ctx.fillRect(-hl,-hw/2,hl,hw);ctx.strokeStyle="#2a1000";ctx.lineWidth=.8;ctx.strokeRect(-hl,-hw/2,hl,hw);
+  ctx.fillStyle="#b09050";for(let hx=-hl+2;hx<0;hx+=4*s)ctx.fillRect(hx,-hw/2,3*s,hw);
+  ctx.fillStyle="#888";ctx.fillRect(-hl-3*s,-hw/2-1,5*s,hw+2);ctx.strokeStyle="#555";ctx.lineWidth=.8;ctx.strokeRect(-hl-3*s,-hw/2-1,5*s,hw+2);
+  ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.restore();
+}
+
+// Draw player knife
+function drawPlayerKnife(y){
+  ctx.save();ctx.translate(knifeStartX,y);
+  const sk=getKnifeSkin(),s=miniKnivesLeft>0?.55:1,bl=75*s,bw=9*s,hl=24*s,hw=10*s,gw=16*s,gh=4*s;
+  ctx.fillStyle=sk.blade[0];ctx.beginPath();ctx.moveTo(bl,0);ctx.lineTo(bl-12*s,-bw/2);ctx.lineTo(0,-bw/2);ctx.lineTo(0,bw/2);ctx.lineTo(bl-12*s,bw/2);ctx.closePath();ctx.fill();ctx.strokeStyle=sk.blade[2];ctx.lineWidth=.8;ctx.stroke();
+  ctx.strokeStyle=sk.center;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(bl-8*s,0);ctx.lineTo(6*s,0);ctx.stroke();
+  const gg=ctx.createLinearGradient(0,-gh,0,gh);gg.addColorStop(0,sk.guard[0]);gg.addColorStop(.5,sk.guard[1]);gg.addColorStop(1,sk.guard[2]);ctx.fillStyle=gg;ctx.fillRect(-gw/2,-gh,gw,gh*2);ctx.strokeStyle="#8a6a10";ctx.lineWidth=.8;ctx.strokeRect(-gw/2,-gh,gw,gh*2);
+  const hg=ctx.createLinearGradient(-hl/2,0,hl/2,0);hg.addColorStop(0,sk.handle[0]);hg.addColorStop(.3,sk.handle[1]);hg.addColorStop(.6,sk.handle[2]);hg.addColorStop(1,sk.handle[3]);ctx.fillStyle=hg;ctx.fillRect(-hl,-hw/2,hl,hw);ctx.strokeStyle="#2a1000";ctx.lineWidth=.8;ctx.strokeRect(-hl,-hw/2,hl,hw);
+  ctx.fillStyle="#b09050";for(let hx=-hl+2;hx<0;hx+=4*s)ctx.fillRect(hx,-hw/2,3*s,hw);
+  ctx.fillStyle="#888";ctx.fillRect(-hl-3*s,-hw/2-1,5*s,hw+2);ctx.strokeStyle="#555";ctx.lineWidth=.8;ctx.strokeRect(-hl-3*s,-hw/2-1,5*s,hw+2);
+  ctx.restore();
+}
+
+function spawnParticles(x,y,count,colors){
+  for(let i=0;i<count;i++){const a=Math.random()*Math.PI*2,sp=Math.random()*6+1;particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,color:colors[Math.floor(Math.random()*colors.length)],life:Math.random()*22+10,maxLife:32,radius:Math.random()*2.5+1,update(){this.x+=this.vx;this.y+=this.vy;this.vy+=.15;this.life--},get dead(){return this.life<=0},draw(c){c.globalAlpha=this.life/this.maxLife;c.fillStyle=this.color;c.beginPath();c.arc(this.x,this.y,this.radius,0,Math.PI*2);c.fill();c.globalAlpha=1}})}
+}
+
+// Power-ups (endless only)
+function applySonicWave(){
+  if(stuckKnives.length===0)return;const rc=Math.max(1,Math.floor(stuckKnives.length/3)),rm=new Set();
+  while(rm.size<rc&&rm.size<stuckKnives.length)rm.add(Math.floor(Math.random()*stuckKnives.length));
+  for(let i=0;i<3;i++)sonicRings.push({x:logCX,y:logCY,radius:20,maxRadius:400,life:30,delay:i*8});
+  const si=[...rm].sort((a,b)=>b-a);for(const idx of si){const sk=stuckKnives[idx];const pos=circleAngleToXY(sk.angle);spawnParticles(pos.x,pos.y,15,["#3498db","#2980b9","#85c1e9","#fff"]);stuckKnives.splice(idx,1)}
+  screenShake=Math.max(screenShake,8);
+}
+function applyVibranium(hitAngle){
+  const radius=0.55,tr=[];for(let i=0;i<stuckKnives.length;i++){if(Math.abs(angleDiff(hitAngle,stuckKnives[i].angle))<radius)tr.push(i)}
+  for(let i=tr.length-1;i>=0;i--){const pos=circleAngleToXY(stuckKnives[tr[i]].angle);spawnParticles(pos.x,pos.y,12,["#9b59b6","#8e44ad","#d7bde2","#fff"]);stuckKnives.splice(tr[i],1)}
+  if(tr.length>0)screenShake=Math.max(screenShake,6);
+}
+function grantRandomPower(){const r=Math.random();if(r<.25)vibraniumActive=true;else if(r<.5)miniKnivesLeft=5;else if(r<.75)sonicActive=true;else iceActive=true;powerUpFlash=40;pendingPowerUp=false}
+
+// Game logic
+function throwKnife(){
+  if(gameState!=="playing")return;
+  if(gameMode==="endless"){
+    if(sonicActive){sonicActive=false;applySonicWave();return}
+    if(iceActive){iceActive=false;flyingKnife={x:knifeStartX,y:knifeY,isIce:true,isMini:false,isVibranium:false};baseKnifeSpeed*=.75;trailPoints=[];return}
+  }
+  if(flyingKnife!==null)return;
+  if(vibraniumActive){flyingKnife={x:knifeStartX,y:knifeY,isVibranium:true,isMini:false};vibraniumActive=false}
+  else{flyingKnife={x:knifeStartX,y:knifeY,isMini:miniKnivesLeft>0,isVibranium:false};if(miniKnivesLeft>0)miniKnivesLeft--}
+  trailPoints=[];
+}
+
+function levelUp(){
+  const reward=level*10;addCoins(reward);
+  level++;levelTarget=4+level;baseKnifeSpeed=2.2+(level-1)*.25;levelTransition=50;screenShake=10;
+  for(const sk of stuckKnives)spawnParticles(boardX,sk.y,10,["#f1c40f","#ffd700","#fff"]);
+  stuckKnives=[];comboCount=0;flyingKnife=null;vibraniumActive=false;miniKnivesLeft=0;sonicActive=false;iceActive=false;
+}
+
+function loseHP(){
+  hp--;screenShake=12;
+  if(hp<=0){endGame();return}
+  flyingKnife=null;
+}
+
+function endGame(){
+  gameState="over";screenShake=20;const hx=flyingKnife?flyingKnife.x:boardX,hy=flyingKnife?flyingKnife.y:H/2;
+  spawnParticles(hx,hy,60,["#ff4500","#ff6b35","#e74c3c","#f1c40f"]);gameOverText.classList.remove("hidden");finalScore.classList.remove("hidden");
+  finalScore.textContent="最终得分: "+score+(gameMode==="level"?" | 第 "+level+" 关":"")+" | 🪙"+coins;
+  // Add restart button
+  let rb=document.getElementById("restartBtn");
+  if(!rb){rb=document.createElement("button");rb.id="restartBtn";rb.className="modeBtn";rb.style.marginTop="16px";rb.textContent="再来一次";rb.onclick=backToMenu;overlay.appendChild(rb)}
+  rb.classList.remove("hidden");
+}
+
+function startGame(mode){gameMode=mode;resetGame();modeSelect.classList.add("hidden");shopPanel.classList.add("hidden")}
+function resetGame(){
+  score=0;level=1;levelTarget=gameMode==="endless"?9999:5;levelTransition=0;baseKnifeSpeed=2.2;logAngle=0;hp=3;
+  stuckKnives=[];flyingKnife=null;particles=[];sonicRings=[];trailPoints=[];
+  screenShake=0;shakeX=0;shakeY=0;comboCount=0;comboFlash=0;powerUpFlash=0;
+  knifeY=H/2;knifeDir=1;nextPowerUpScore=6;pendingPowerUp=false;
+  vibraniumActive=false;miniKnivesLeft=0;sonicActive=false;iceActive=false;
+  gameState="playing";gameOverText.classList.add("hidden");finalScore.classList.add("hidden");
+  title.classList.add("hidden");subtitle.classList.add("hidden");overlay.classList.remove("active");
+  const rb=document.getElementById("restartBtn");if(rb)rb.classList.add("hidden");
+}
+
+function backToMenu(){
+  gameState="menu";gameOverText.classList.add("hidden");finalScore.classList.add("hidden");
+  modeSelect.classList.remove("hidden");title.classList.remove("hidden");subtitle.classList.remove("hidden");
+  overlay.classList.add("active");shopPanel.classList.remove("hidden");
+  const rb=document.getElementById("restartBtn");if(rb)rb.classList.add("hidden");
+  updateCoinDisplay();updateShop();
+}
+
+document.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();if(gameState==="over")backToMenu();else if(gameState==="playing")throwKnife()}});
+btnLevel.addEventListener("click",()=>startGame("level"));btnEndless.addEventListener("click",()=>startGame("endless"));
+
+function getCollisionRadius(){return(miniKnivesLeft>0||(flyingKnife&&flyingKnife.isMini))?12:24}
+
+function update(){
+  if(gameState=="playing"){const ds=baseKnifeSpeed+score*.12;knifeY+=knifeDir*ds;if(knifeY>=knifeMaxY){knifeY=knifeMaxY;knifeDir=-1}if(knifeY<=knifeMinY){knifeY=knifeMinY;knifeDir=1}}
+  if(gameMode=="endless")logAngle+=0.02;
+  for(const r of sonicRings){if(r.delay>0){r.delay--;continue}r.radius+=(r.maxRadius-r.radius)*.15;r.life--}
+  sonicRings=sonicRings.filter(r=>r.life>0);
+
+  if(flyingKnife){
+    flyingKnife.x+=flySpeed;
+    trailPoints.push({x:flyingKnife.x,y:flyingKnife.y,life:5,maxLife:5,isVibranium:flyingKnife.isVibranium,isMini:flyingKnife.isMini,isIce:flyingKnife.isIce});if(trailPoints.length>30)trailPoints.shift();
+
+    if(gameMode=="level"){
+      // --- Rect board collision ---
+      const colRad=flyingKnife.isMini?12:18;
+      let hitHandle=false;
+      for(let i=stuckKnives.length-1;i>=0;i--){
+        const sk=stuckKnives[i],skExt=(60+24+4)*(sk.isMini?.55:1),kl=boardX-skExt,kr=boardX+sk.depth;
+        if(flyingKnife.x>=kl&&flyingKnife.x<=kr&&Math.abs(flyingKnife.y-sk.y)<colRad){hitHandle=true;spawnParticles(flyingKnife.x,flyingKnife.y,25,["#ff0000","#ff4500"]);endGame();break}
+      }
+      if(hitHandle){flyingKnife=null;return}
+      if(flyingKnife.x>=boardX){
+        const hy=flyingKnife.y;
+        if(hy>=boardTop+12&&hy<=boardBottom-12){
+          let collided=false;for(const sk of stuckKnives)if(Math.abs(hy-sk.y)<getCollisionRadius()){collided=true;break}
+          if(collided){spawnParticles(flyingKnife.x,hy,25,["#ff0000","#ff4500"]);endGame()}
+          else{const depth=stickDepth+Math.random()*8;stuckKnives.push({y:hy,depth,isMini:flyingKnife.isMini});stuckKnives.sort((a,b)=>a.y-b.y);score++;comboCount++;comboFlash=15;spawnParticles(boardX,hy,8,["#ffd700","#c49a6c","#ffffff"]);screenShake=Math.max(screenShake,3);if(stuckKnives.length>=levelTarget)levelUp()}
+        }else{spawnParticles(flyingKnife.x,hy,20,["#ff0000","#ff4500"]);endGame()}
+        flyingKnife=null;
+      }
+    }else{
+      // --- Circle log collision ---
+      const dx=flyingKnife.x-logCX,dy=flyingKnife.y-logCY,dist=Math.sqrt(dx*dx+dy*dy);
+      const colRad=flyingKnife.isMini?14:24;
+      let hitHandle=false;
+      for(let i=stuckKnives.length-1;i>=0;i--){
+        const pos=circleAngleToXY(stuckKnives[i].angle);
+        const kdx=flyingKnife.x-pos.x,kdy=flyingKnife.y-pos.y,kdist=Math.sqrt(kdx*kdx+kdy*kdy);
+        const skExt=38*(stuckKnives[i].isMini?.55:1);
+        if(kdist<colRad+skExt){
+          if(flyingKnife.isVibranium){spawnParticles(pos.x,pos.y,15,["#9b59b6","#8e44ad","#d7bde2","#fff"]);stuckKnives.splice(i,1);screenShake=Math.max(screenShake,4)}
+          else{hitHandle=true;spawnParticles(flyingKnife.x,flyingKnife.y,25,["#ff0000","#ff4500"]);loseHP();break}
+        }
+      }
+      if(hitHandle){flyingKnife=null;return}
+      if(flyingKnife&&dist<=logRadius+10){
+        const hitAngle=Math.atan2(dy,dx)-logAngle;
+        let collided=false;
+        for(const sk of stuckKnives){if(Math.abs(angleDiff(hitAngle,sk.angle))*logRadius<(flyingKnife.isMini?14:22)){collided=true;break}}
+        if(collided){spawnParticles(flyingKnife.x,flyingKnife.y,25,["#ff0000","#ff4500"]);loseHP()}
+        else{
+          if(flyingKnife.isVibranium)applyVibranium(hitAngle);
+          stuckKnives.push({angle:hitAngle,isMini:flyingKnife.isMini});score++;comboCount++;comboFlash=15;
+          const pos=circleAngleToXY(hitAngle);spawnParticles(pos.x,pos.y,8,["#ffd700","#c49a6c","#ffffff"]);screenShake=Math.max(screenShake,3);
+          if(score>=nextPowerUpScore){pendingPowerUp=true;nextPowerUpScore+=5+level}
+        }
+        flyingKnife=null;if(pendingPowerUp&&gameState=="playing")grantRandomPower();
+      }
+      // Missed the log entirely?
+      if(flyingKnife&&flyingKnife.x>logCX+logRadius+80){spawnParticles(flyingKnife.x,flyingKnife.y,20,["#ff0000","#ff4500"]);loseHP();flyingKnife=null}
+    }
+  }
+
+  for(const tp of trailPoints)tp.life--;trailPoints=trailPoints.filter(tp=>tp.life>0);
+  for(const p of particles)p.update();particles=particles.filter(p=>!p.dead);
+  if(comboFlash>0)comboFlash--;if(powerUpFlash>0)powerUpFlash--;if(levelTransition>0)levelTransition--;
+  if(screenShake>0){shakeX=(Math.random()-.5)*screenShake;shakeY=(Math.random()-.5)*screenShake;screenShake*=.85;if(screenShake<.3){screenShake=0;shakeX=0;shakeY=0}}else{shakeX=0;shakeY=0}
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);ctx.save();ctx.translate(shakeX,shakeY);
+  const bg=ctx.createLinearGradient(0,0,0,H);bg.addColorStop(0,"#1a1a3e");bg.addColorStop(.5,"#16213e");bg.addColorStop(1,"#0f3460");ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle="rgba(255,255,255,.025)";ctx.lineWidth=1;for(let gy=0;gy<H;gy+=40){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(W,gy);ctx.stroke()}
+
+  for(const r of sonicRings){if(r.delay>0)continue;const a=r.life/30;ctx.strokeStyle="rgba(52,152,219,"+a+")";ctx.lineWidth=3;ctx.beginPath();ctx.arc(r.x,r.y,r.radius,0,Math.PI*2);ctx.stroke();ctx.strokeStyle="rgba(133,193,233,"+(a*.5)+")";ctx.lineWidth=1;ctx.beginPath();ctx.arc(r.x,r.y,r.radius*.85,0,Math.PI*2);ctx.stroke()}
+
+  if(gameMode=="level"){
+    ctx.fillStyle="rgba(0,0,0,.3)";ctx.fillRect(boardX+12,boardY+10,boardW,boardH);drawRectBoard();
+    for(const sk of stuckKnives)drawRectStuckKnife(sk.y,sk.depth,sk.isMini);
+  }else{
+    ctx.fillStyle="rgba(0,0,0,.3)";ctx.beginPath();ctx.arc(logCX+6,logCY+8,logRadius+20,0,Math.PI*2);ctx.fill();
+    drawCircleLog();
+    for(const sk of stuckKnives)drawCircleStuckKnife(sk.angle,sk.isMini);
+  }
+
+  for(const tp of trailPoints){let c;if(tp.isVibranium)c="rgba(155,89,182,"+(tp.life/tp.maxLife*.4)+")";else if(tp.isIce)c="rgba(0,200,255,"+(tp.life/tp.maxLife*.4)+")";else c="rgba(255,255,255,"+(tp.life/tp.maxLife*.35)+")";ctx.fillStyle=c;ctx.beginPath();ctx.arc(tp.x,tp.y,3.5,0,Math.PI*2);ctx.fill()}
+  if(flyingKnife)drawFlyingKnife(flyingKnife.x,flyingKnife.y,flyingKnife.isMini,flyingKnife.isVibranium,flyingKnife.isIce);
+
+  if(gameState=="playing"){
+    const pulse=Math.sin(Date.now()*.005)*.3+.7;
+    if(vibraniumActive){ctx.fillStyle="rgba(155,89,182,"+(pulse*.2)+")";ctx.beginPath();ctx.arc(knifeStartX+37,knifeY,28,0,Math.PI*2);ctx.fill()}
+    if(sonicActive){ctx.fillStyle="rgba(52,152,219,"+(pulse*.2)+")";ctx.beginPath();ctx.arc(knifeStartX+37,knifeY,28,0,Math.PI*2);ctx.fill()}
+    if(iceActive){ctx.fillStyle="rgba(0,200,255,"+(pulse*.2)+")";ctx.beginPath();ctx.arc(knifeStartX+37,knifeY,28,0,Math.PI*2);ctx.fill()}
+    drawPlayerKnife(knifeY);
+    if(miniKnivesLeft>0){ctx.fillStyle="rgba(46,204,113,"+(pulse*.15)+")";ctx.beginPath();ctx.arc(knifeStartX+20,knifeY,20,0,Math.PI*2);ctx.fill()}
+    ctx.strokeStyle="rgba(255,255,255,.08)";ctx.lineWidth=1;ctx.setLineDash([2,6]);ctx.beginPath();ctx.moveTo(knifeStartX,knifeMinY-10);ctx.lineTo(knifeStartX,knifeMaxY+10);ctx.stroke();ctx.setLineDash([]);
+  }
+  for(const p of particles)p.draw(ctx);ctx.restore();
+
+  if(gameState=="playing"){
+    ctx.fillStyle="rgba(0,0,0,.25)";ctx.fillRect(0,0,W,72);
+    if(gameMode=="level"){const pp=stuckKnives.length/levelTarget;ctx.fillStyle="rgba(255,255,255,.15)";ctx.fillRect(W/2-120,48,240,6);ctx.fillStyle="#f1c40f";ctx.fillRect(W/2-120,48,240*pp,6);ctx.strokeStyle="rgba(255,255,255,.3)";ctx.lineWidth=1;ctx.strokeRect(W/2-120,48,240,6)}
+    ctx.fillStyle="#fff";ctx.font="bold 30px Segoe UI, Arial";ctx.textAlign="center";ctx.shadowColor="rgba(0,0,0,.5)";ctx.shadowBlur=4;ctx.fillText("🏆  "+score,W/2,38);ctx.shadowBlur=0;
+    ctx.fillStyle="#f1c40f";ctx.font="bold 14px Segoe UI, Arial";
+    if(gameMode=="level")ctx.fillText("第 "+level+" 关  |  "+stuckKnives.length+"/"+levelTarget+"  |  🪙"+coins,W/2,66);
+    else{let hearts="";for(let h=0;h<maxHp;h++)hearts+=h<hp?"❤️":"🖤";ctx.fillText("♾️ 无尽模式  |  "+hearts+"  |  🪙"+coins,W/2,66)}
+
+    if(gameMode=="endless"){
+      let iy=78;if(vibraniumActive){ctx.fillStyle="#c39bdb";ctx.font="bold 13px Segoe UI, Arial";ctx.fillText("💜 振金飞刀就绪",W/2,iy);iy+=16}
+      if(miniKnivesLeft>0){ctx.fillStyle="#58d68d";ctx.font="bold 13px Segoe UI, Arial";ctx.fillText("💚 迷你飞刀 ×"+miniKnivesLeft,W/2,iy);iy+=16}
+      if(sonicActive){ctx.fillStyle="#85c1e9";ctx.font="bold 13px Segoe UI, Arial";ctx.fillText("💙 声波震击就绪",W/2,iy);iy+=16}
+      if(iceActive){ctx.fillStyle="#7dd3fc";ctx.font="bold 13px Segoe UI, Arial";ctx.fillText("❄️ 寒冰飞刀就绪",W/2,iy)}
+      if(comboCount>1&&comboFlash>0){ctx.fillStyle="rgba(255,170,0,"+(comboFlash/15)+")";ctx.font="bold 16px Segoe UI, Arial";ctx.fillText(comboCount+"x 连击!",W/2,iy+18)}
+      if(!pendingPowerUp){ctx.fillStyle="rgba(255,255,255,.3)";ctx.font="11px Segoe UI, Arial";ctx.fillText("下个能力: "+nextPowerUpScore+" 分",W/2,H-28)}
+    }
+    if(powerUpFlash>0){ctx.fillStyle="rgba(255,215,0,"+(powerUpFlash/40)+")";ctx.font="bold 36px Segoe UI, Arial";ctx.fillText("⚡ 能力激活！",W/2,H/2-40)}
+    if(levelTransition>0){ctx.fillStyle="rgba(241,196,15,"+(levelTransition/50)+")";ctx.font="bold 40px Segoe UI, Arial";ctx.fillText("🎯 第 "+level+" 关！+🪙"+((level-1)*10),W/2,H/2-40);ctx.font="18px Segoe UI, Arial";ctx.fillText("目标: "+levelTarget+" 把飞刀",W/2,H/2)}
+    ctx.fillStyle="rgba(255,255,255,.4)";ctx.font="13px Segoe UI, Arial";ctx.fillText("按 [ ENTER ] 投掷",W/2,H-16);
+  }
+}
+
+function gameLoop(){update();draw();requestAnimationFrame(gameLoop)}
+updateCoinDisplay();updateShop();shopPanel.classList.remove("hidden");gameLoop();
+</script>
+</body>
+</html>
