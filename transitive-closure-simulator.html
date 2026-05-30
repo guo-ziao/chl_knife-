@@ -1,0 +1,968 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>传递闭包模拟器</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #0b0b1a;
+  color: #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  overflow: hidden;
+  user-select: none;
+}
+
+.header {
+  width: 100%;
+  padding: 14px 24px;
+  background: linear-gradient(135deg, #1a1a3e 0%, #0f0f2d 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  border-bottom: 1px solid #2a2a5a;
+  box-shadow: 0 2px 20px rgba(0,0,0,0.5);
+  z-index: 10;
+}
+
+.header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #00e5ff, #7c4dff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 0.5px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.controls label {
+  font-size: 0.9rem;
+  color: #aaa;
+  white-space: nowrap;
+}
+
+.controls input[type="number"] {
+  width: 60px;
+  padding: 6px 8px;
+  border: 2px solid #3a3a6a;
+  border-radius: 8px;
+  background: #12122a;
+  color: #e0e0e0;
+  font-size: 1rem;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.controls input[type="number"]:focus {
+  border-color: #7c4dff;
+}
+
+.btn {
+  padding: 8px 18px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 0.3px;
+}
+
+.btn-generate {
+  background: linear-gradient(135deg, #7c4dff, #536dfe);
+  color: #fff;
+}
+.btn-generate:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(124,77,255,0.4);
+}
+
+.btn-reset {
+  background: transparent;
+  color: #ccc;
+  border: 1px solid #444;
+}
+.btn-reset:hover {
+  border-color: #888;
+  color: #fff;
+}
+
+.btn-undo {
+  background: transparent;
+  color: #ff6b6b;
+  border: 1px solid #553;
+}
+.btn-undo:hover {
+  border-color: #ff6b6b;
+  background: rgba(255,107,107,0.1);
+}
+
+.btn-hint {
+  background: transparent;
+  color: #ffd740;
+  border: 1px solid #554;
+}
+.btn-hint:hover {
+  border-color: #ffd740;
+  background: rgba(255,215,64,0.1);
+}
+
+.canvas-container {
+  flex: 1;
+  width: 100%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+canvas {
+  display: block;
+  cursor: crosshair;
+}
+
+.info-bar {
+  width: 100%;
+  padding: 10px 24px;
+  background: #11112a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  border-top: 1px solid #2a2a5a;
+  font-size: 0.9rem;
+}
+
+.info-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.info-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot-init { background: rgba(200,200,220,0.7); }
+.dot-player { background: #00e5ff; }
+.dot-needed { background: #ff6b6b; }
+
+.status {
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+}
+
+.status-playing {
+  background: rgba(124,77,255,0.2);
+  color: #b388ff;
+}
+
+.status-win {
+  background: rgba(0,230,118,0.2);
+  color: #00e676;
+  animation: pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes pulse {
+  from { box-shadow: 0 0 8px rgba(0,230,118,0.3); }
+  to { box-shadow: 0 0 20px rgba(0,230,118,0.7); }
+}
+
+.toast {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 24px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  z-index: 100;
+  pointer-events: none;
+  animation: toastIn 0.3s ease-out, toastOut 0.3s ease-in 2s forwards;
+  opacity: 0;
+}
+
+.toast-error {
+  background: rgba(255,82,82,0.9);
+  color: #fff;
+}
+
+.toast-success {
+  background: rgba(0,230,118,0.9);
+  color: #000;
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes toastOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.win-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.win-dialog {
+  background: linear-gradient(135deg, #1a1a4e, #0f0f2d);
+  border: 2px solid #00e676;
+  border-radius: 16px;
+  padding: 36px 48px;
+  text-align: center;
+  box-shadow: 0 0 60px rgba(0,230,118,0.3);
+}
+
+.win-dialog h2 {
+  font-size: 2rem;
+  color: #00e676;
+  margin-bottom: 8px;
+}
+
+.win-dialog p {
+  color: #ccc;
+  margin-bottom: 20px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.particle {
+  position: fixed;
+  pointer-events: none;
+  z-index: 60;
+  animation: particleFly 1.5s ease-out forwards;
+}
+
+@keyframes particleFly {
+  0% { opacity: 1; transform: translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(0); }
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🔗 传递闭包模拟器</h1>
+  <div class="controls">
+    <label for="nodeCount">格点数量 (1–20):</label>
+    <input type="number" id="nodeCount" min="1" max="20" value="5">
+    <button class="btn btn-generate" id="btnGenerate">生成图</button>
+    <button class="btn btn-reset" id="btnReset">重置</button>
+    <button class="btn btn-undo" id="btnUndo" disabled>撤销</button>
+    <button class="btn btn-hint" id="btnHint" disabled>💡 提示</button>
+  </div>
+</div>
+
+<div class="canvas-container">
+  <canvas id="graphCanvas"></canvas>
+</div>
+
+<div class="info-bar">
+  <div class="info-item">
+    <span class="info-dot dot-init"></span> 初始边: <strong id="initEdgeCount">0</strong>
+  </div>
+  <div class="info-item">
+    <span class="info-dot dot-player"></span> 已添加: <strong id="playerEdgeCount">0</strong>
+  </div>
+  <div class="info-item">
+    <span class="info-dot dot-needed"></span> 还需添加: <strong id="neededEdgeCount">—</strong>
+  </div>
+  <div class="info-item">
+    状态: <span class="status status-playing" id="statusText">等待生成图…</span>
+  </div>
+</div>
+
+<div id="toastContainer"></div>
+
+<script>
+(function() {
+  const canvas = document.getElementById("graphCanvas");
+  const ctx = canvas.getContext("2d");
+  const nodeCountInput = document.getElementById("nodeCount");
+  const btnGenerate = document.getElementById("btnGenerate");
+  const btnReset = document.getElementById("btnReset");
+  const btnUndo = document.getElementById("btnUndo");
+  const btnHint = document.getElementById("btnHint");
+  const initEdgeCountEl = document.getElementById("initEdgeCount");
+  const playerEdgeCountEl = document.getElementById("playerEdgeCount");
+  const neededEdgeCountEl = document.getElementById("neededEdgeCount");
+  const statusText = document.getElementById("statusText");
+  const toastContainer = document.getElementById("toastContainer");
+
+  const NODE_RADIUS = 22;
+  const NODE_RADIUS_SQ = NODE_RADIUS * NODE_RADIUS;
+
+  let nodes = [];
+  let initEdges = [];
+  let playerEdges = [];
+  let selectedNode = -1;
+  let gameWon = false;
+  let hintNode = -1;
+
+  function resizeCanvas() {
+    const container = canvas.parentElement;
+    canvas.width = container.clientWidth - 4;
+    canvas.height = container.clientHeight - 4;
+    if (nodes.length > 0) {
+      keepNodesInBounds();
+      draw();
+    }
+  }
+
+  window.addEventListener("resize", resizeCanvas);
+
+  function keepNodesInBounds() {
+    const pad = NODE_RADIUS + 4;
+    for (const n of nodes) {
+      n.x = Math.max(pad, Math.min(canvas.width - pad, n.x));
+      n.y = Math.max(pad, Math.min(canvas.height - pad, n.y));
+    }
+  }
+
+  function allEdges() {
+    return [...initEdges, ...playerEdges];
+  }
+
+  function edgeKey(from, to) {
+    return from * 1000 + to;
+  }
+
+  function hasEdge(from, to) {
+    const key = edgeKey(from, to);
+    return initEdges.some(e => edgeKey(e[0], e[1]) === key) ||
+           playerEdges.some(e => edgeKey(e[0], e[1]) === key);
+  }
+
+  function buildAdjMatrix(edges) {
+    const n = nodes.length;
+    const adj = Array.from({length: n}, () => Array(n).fill(false));
+    for (const [f, t] of edges) {
+      if (f !== t) adj[f][t] = true;
+    }
+    return adj;
+  }
+
+  function computeReachability(adj) {
+    const n = nodes.length;
+    const reach = adj.map(row => [...row]);
+    for (let k = 0; k < n; k++) {
+      for (let i = 0; i < n; i++) {
+        if (!reach[i][k]) continue;
+        for (let j = 0; j < n; j++) {
+          reach[i][j] = reach[i][j] || reach[k][j];
+        }
+      }
+    }
+    return reach;
+  }
+
+  function countMissingEdges() {
+    const adj = buildAdjMatrix(allEdges());
+    const reach = computeReachability(adj);
+    let count = 0;
+    const n = nodes.length;
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (i !== j && reach[i][j] && !adj[i][j]) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }
+
+  function getMissingEdges() {
+    const adj = buildAdjMatrix(allEdges());
+    const reach = computeReachability(adj);
+    const missing = [];
+    const n = nodes.length;
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (i !== j && reach[i][j] && !adj[i][j]) {
+          missing.push([i, j]);
+        }
+      }
+    }
+    return missing;
+  }
+
+  function isTransitivelyClosed() {
+    return countMissingEdges() === 0;
+  }
+
+  function generateRandomPositions(n) {
+    const margin = NODE_RADIUS + 10;
+    const w = canvas.width - margin * 2;
+    const h = canvas.height - margin * 2;
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    const radius = Math.min(w, h) * 0.38;
+
+    if (n === 1) {
+      return [{x: cx, y: cy}];
+    }
+
+    const positions = [];
+    for (let i = 0; i < n; i++) {
+      const angle = (2 * Math.PI * i) / n + (Math.random() - 0.5) * 0.8;
+      const r = radius * (0.7 + Math.random() * 0.3);
+      positions.push({
+        x: cx + Math.cos(angle) * r,
+        y: cy + Math.sin(angle) * r
+      });
+    }
+    return positions;
+  }
+
+  function forceLayout() {
+    const n = nodes.length;
+    if (n <= 1) return;
+
+    const area = canvas.width * canvas.height;
+    const k = Math.sqrt(area / n) * 1.5;
+    const iterations = 120;
+    let temp = Math.min(canvas.width, canvas.height) / 8;
+    const edges = allEdges();
+
+    for (let iter = 0; iter < iterations; iter++) {
+      const forces = nodes.map(() => ({fx: 0, fy: 0}));
+
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          let dx = nodes[i].x - nodes[j].x;
+          let dy = nodes[i].y - nodes[j].y;
+          let dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 1) dist = 1;
+          const force = (k * k) / dist;
+          const fx = (dx / dist) * force;
+          const fy = (dy / dist) * force;
+          forces[i].fx += fx;
+          forces[i].fy += fy;
+          forces[j].fx -= fx;
+          forces[j].fy -= fy;
+        }
+      }
+
+      for (const [f, t] of edges) {
+        if (f === t) continue;
+        let dx = nodes[t].x - nodes[f].x;
+        let dy = nodes[t].y - nodes[f].y;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 1) dist = 1;
+        const force = (dist * dist) / k;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        forces[f].fx += fx;
+        forces[f].fy += fy;
+        forces[t].fx -= fx;
+        forces[t].fy -= fy;
+      }
+
+      const margin = NODE_RADIUS + 8;
+      for (let i = 0; i < n; i++) {
+        const {fx, fy} = forces[i];
+        const mag = Math.sqrt(fx * fx + fy * fy);
+        if (mag > 0) {
+          const step = Math.min(mag, temp);
+          nodes[i].x += (fx / mag) * step;
+          nodes[i].y += (fy / mag) * step;
+        }
+        nodes[i].x = Math.max(margin, Math.min(canvas.width - margin, nodes[i].x));
+        nodes[i].y = Math.max(margin, Math.min(canvas.height - margin, nodes[i].y));
+      }
+
+      temp *= 0.96;
+    }
+  }
+
+  function generateGraph(n) {
+    if (n < 1 || n > 20) {
+      showToast("请输入 1 到 20 之间的数字", "error");
+      return;
+    }
+
+    if (n === 1) {
+      showToast("1 个格点的图天然是传递闭包，请选择 ≥2 个格点", "error");
+      return;
+    }
+
+    resizeCanvas();
+    const positions = generateRandomPositions(n);
+    nodes = positions.map((p, i) => ({x: p.x, y: p.y, id: i}));
+
+    initEdges = [];
+    const prob = Math.min(0.35, Math.max(0.15, 2.5 / n));
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (i !== j && Math.random() < prob) {
+          initEdges.push([i, j]);
+        }
+      }
+    }
+
+    if (initEdges.length === 0) {
+      const a = Math.floor(Math.random() * n);
+      let b = Math.floor(Math.random() * (n - 1));
+      if (b >= a) b++;
+      initEdges.push([a, b]);
+    }
+
+    playerEdges = [];
+    for (let attempts = 0; attempts < 30; attempts++) {
+      const missing = countMissingEdges();
+      if (missing >= 2) break;
+      const a = Math.floor(Math.random() * n);
+      let b = Math.floor(Math.random() * (n - 1));
+      if (b >= a) b++;
+      if (!hasEdge(a, b)) {
+        initEdges.push([a, b]);
+      }
+    }
+
+    playerEdges = [];
+    selectedNode = -1;
+    hintNode = -1;
+    gameWon = false;
+
+    forceLayout();
+
+    btnUndo.disabled = true;
+    btnHint.disabled = false;
+    updateInfo();
+    draw();
+  }
+
+  function resetGame() {
+    if (nodes.length === 0) return;
+    playerEdges = [];
+    selectedNode = -1;
+    hintNode = -1;
+    gameWon = false;
+    btnUndo.disabled = true;
+    btnHint.disabled = false;
+    updateInfo();
+    draw();
+    removeWinOverlay();
+  }
+
+  function undoLastEdge() {
+    if (gameWon || playerEdges.length === 0) return;
+    playerEdges.pop();
+    hintNode = -1;
+    selectedNode = -1;
+    btnUndo.disabled = playerEdges.length === 0;
+    updateInfo();
+    draw();
+  }
+
+  function showHint() {
+    if (gameWon || nodes.length === 0) return;
+    const missing = getMissingEdges();
+    if (missing.length === 0) return;
+    const edge = missing[Math.floor(Math.random() * missing.length)];
+    hintNode = edge[0];
+    draw();
+    showToast("提示: 从节点 " + (edge[0] + 1) + " 出发有一条路径缺少直接边", "success");
+  }
+
+  function updateInfo() {
+    initEdgeCountEl.textContent = initEdges.length;
+    playerEdgeCountEl.textContent = playerEdges.length;
+
+    if (nodes.length === 0) {
+      neededEdgeCountEl.textContent = "—";
+      statusText.textContent = "等待生成图…";
+      statusText.className = "status status-playing";
+      return;
+    }
+
+    const missing = countMissingEdges();
+    neededEdgeCountEl.textContent = missing;
+
+    if (missing === 0) {
+      statusText.textContent = "🎉 传递闭包达成!";
+      statusText.className = "status status-win";
+    } else {
+      statusText.textContent = "还需 " + missing + " 条边";
+      statusText.className = "status status-playing";
+    }
+  }
+
+  function pointToSegmentDist(px, py, ax, ay, bx, by) {
+    var dx = bx - ax, dy = by - ay;
+    var lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return Math.sqrt((px - ax) * (px - ax) + (py - ay) * (py - ay));
+    var t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    var projX = ax + t * dx, projY = ay + t * dy;
+    return Math.sqrt((px - projX) * (px - projX) + (py - projY) * (py - projY));
+  }
+
+  function findObstructingNode(fromIdx, toIdx) {
+    var fx = nodes[fromIdx].x, fy = nodes[fromIdx].y;
+    var tx = nodes[toIdx].x, ty = nodes[toIdx].y;
+    for (var i = 0; i < nodes.length; i++) {
+      if (i === fromIdx || i === toIdx) continue;
+      if (pointToSegmentDist(nodes[i].x, nodes[i].y, fx, fy, tx, ty) < NODE_RADIUS + 6) return i;
+    }
+    return -1;
+  }
+
+  function computeEdgeCurve(fromIdx, toIdx) {
+    var fx = nodes[fromIdx].x, fy = nodes[fromIdx].y;
+    var tx = nodes[toIdx].x, ty = nodes[toIdx].y;
+    var dx = tx - fx, dy = ty - fy;
+    var edgeLen = Math.sqrt(dx * dx + dy * dy);
+    var midX = (fx + tx) / 2, midY = (fy + ty) / 2;
+    var perpX = -dy, perpY = dx;
+    var perpLen = Math.sqrt(perpX * perpX + perpY * perpY);
+    if (perpLen > 1e-6) { perpX /= perpLen; perpY /= perpLen; }
+    var isBidirectional = hasEdge(toIdx, fromIdx);
+    var ob = findObstructingNode(fromIdx, toIdx);
+    if (!isBidirectional && ob === -1) return null;
+    var sign = 1;
+    if (ob >= 0) {
+      var ox = nodes[ob].x - midX, oy = nodes[ob].y - midY;
+      sign = (ox * perpX + oy * perpY) > 0 ? -1 : 1;
+    }
+    if (isBidirectional && fromIdx > toIdx) sign *= -1;
+    var offset = Math.max(28, edgeLen * 0.2);
+    return { x: midX + perpX * sign * offset, y: midY + perpY * sign * offset };
+  }
+
+  function drawArrow(fromX, fromY, toX, toY, color, width, ctrl) {
+    if (!ctrl) {
+      var angle = Math.atan2(toY - fromY, toX - fromX);
+      var startX = fromX + NODE_RADIUS * Math.cos(angle);
+      var startY = fromY + NODE_RADIUS * Math.sin(angle);
+      var endX = toX - NODE_RADIUS * Math.cos(angle);
+      var endY = toY - NODE_RADIUS * Math.sin(angle);
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.stroke();
+      var headLen = 13, headAngle = Math.PI / 6.5;
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(endX - headLen * Math.cos(angle - headAngle), endY - headLen * Math.sin(angle - headAngle));
+      ctx.lineTo(endX - headLen * Math.cos(angle + headAngle), endY - headLen * Math.sin(angle + headAngle));
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    } else {
+      var sdx = ctrl.x - fromX, sdy = ctrl.y - fromY;
+      var sLen = Math.sqrt(sdx * sdx + sdy * sdy) || 1;
+      var startX = fromX + (sdx / sLen) * NODE_RADIUS;
+      var startY = fromY + (sdy / sLen) * NODE_RADIUS;
+      var edx = toX - ctrl.x, edy = toY - ctrl.y;
+      var eLen = Math.sqrt(edx * edx + edy * edy) || 1;
+      var endX = toX - (edx / eLen) * NODE_RADIUS;
+      var endY = toY - (edy / eLen) * NODE_RADIUS;
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.quadraticCurveTo(ctrl.x, ctrl.y, endX, endY);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.stroke();
+      var angle = Math.atan2(endY - ctrl.y, endX - ctrl.x);
+      var headLen = 13, headAngle = Math.PI / 6.5;
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(endX - headLen * Math.cos(angle - headAngle), endY - headLen * Math.sin(angle - headAngle));
+      ctx.lineTo(endX - headLen * Math.cos(angle + headAngle), endY - headLen * Math.sin(angle + headAngle));
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.03)";
+    ctx.lineWidth = 1;
+    const gridSize = 40;
+    for (let x = gridSize; x < canvas.width; x += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, canvas.height);
+      ctx.stroke();
+    }
+    for (let y = gridSize; y < canvas.height; y += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(canvas.width, y);
+      ctx.stroke();
+    }
+
+    if (nodes.length === 0) {
+      ctx.fillStyle = "#555";
+      ctx.font = "18px \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("输入格点数量并点击\"生成图\"开始游戏", canvas.width / 2, canvas.height / 2);
+      return;
+    }
+
+    for (const [f, t] of initEdges) {
+      if (f === t) continue;
+      var ctrl = computeEdgeCurve(f, t);
+      drawArrow(nodes[f].x, nodes[f].y, nodes[t].x, nodes[t].y,
+        "rgba(180,185,210,0.55)", 2.5, ctrl);
+    }
+
+    for (const [f, t] of playerEdges) {
+      if (f === t) continue;
+      var ctrl = computeEdgeCurve(f, t);
+      drawArrow(nodes[f].x, nodes[f].y, nodes[t].x, nodes[t].y,
+        "#00e5ff", 2.8, ctrl);
+    }
+
+    if (hintNode >= 0 && hintNode < nodes.length) {
+      const n = nodes[hintNode];
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, NODE_RADIUS + 7, 0, Math.PI * 2);
+      ctx.strokeStyle = "#ffd740";
+      ctx.lineWidth = 3;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    for (let i = 0; i < nodes.length; i++) {
+      const {x, y} = nodes[i];
+
+      if (i === selectedNode) {
+        const gradient = ctx.createRadialGradient(x, y, NODE_RADIUS, x, y, NODE_RADIUS + 14);
+        gradient.addColorStop(0, "rgba(255,215,0,0.5)");
+        gradient.addColorStop(1, "rgba(255,215,0,0)");
+        ctx.beginPath();
+        ctx.arc(x, y, NODE_RADIUS + 14, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      }
+
+      const nodeGrad = ctx.createRadialGradient(x - 5, y - 5, 2, x, y, NODE_RADIUS);
+      nodeGrad.addColorStop(0, "#5c6bc0");
+      nodeGrad.addColorStop(1, "#283593");
+
+      ctx.beginPath();
+      ctx.arc(x, y, NODE_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = nodeGrad;
+      ctx.fill();
+      ctx.strokeStyle = i === selectedNode ? "#ffd740" : "#7986cb";
+      ctx.lineWidth = i === selectedNode ? 3 : 2;
+      ctx.stroke();
+
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 13px \"Segoe UI\", \"PingFang SC\", sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(i + 1, x, y);
+    }
+  }
+
+  function getNodeAt(mx, my) {
+    for (let i = 0; i < nodes.length; i++) {
+      const dx = mx - nodes[i].x;
+      const dy = my - nodes[i].y;
+      if (dx * dx + dy * dy <= NODE_RADIUS_SQ) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  canvas.addEventListener("click", (e) => {
+    if (gameWon || nodes.length === 0) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const clicked = getNodeAt(mx, my);
+
+    if (clicked === -1) {
+      selectedNode = -1;
+      hintNode = -1;
+      draw();
+      return;
+    }
+
+    if (selectedNode === -1) {
+      selectedNode = clicked;
+      hintNode = -1;
+      draw();
+      return;
+    }
+
+    if (selectedNode === clicked) {
+      selectedNode = -1;
+      draw();
+      return;
+    }
+
+    const from = selectedNode;
+    const to = clicked;
+
+    if (hasEdge(from, to)) {
+      showToast("边 " + (from + 1) + " → " + (to + 1) + " 已存在", "error");
+      selectedNode = -1;
+      draw();
+      return;
+    }
+
+    playerEdges.push([from, to]);
+    selectedNode = -1;
+    hintNode = -1;
+
+    btnUndo.disabled = false;
+
+    if (isTransitivelyClosed()) {
+      gameWon = true;
+      updateInfo();
+      btnHint.disabled = true;
+      draw();
+      spawnWinParticles();
+      setTimeout(showWinOverlay, 600);
+    } else {
+      updateInfo();
+      draw();
+    }
+  });
+
+  canvas.addEventListener("mousemove", (e) => {
+    if (gameWon || nodes.length === 0) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const hovered = getNodeAt(mx, my);
+    canvas.style.cursor = hovered >= 0 ? "pointer" : "crosshair";
+  });
+
+  function showToast(msg, type) {
+    const toast = document.createElement("div");
+    toast.className = "toast toast-" + type;
+    toast.textContent = msg;
+    toastContainer.appendChild(toast);
+    setTimeout(() => toast.remove(), 2400);
+  }
+
+  function spawnWinParticles() {
+    const colors = ["#00e676", "#00e5ff", "#ffd740", "#ff6e40", "#ea80fc", "#40c4ff"];
+    for (let i = 0; i < 40; i++) {
+      setTimeout(() => {
+        const p = document.createElement("div");
+        p.className = "particle";
+        const size = 4 + Math.random() * 8;
+        p.style.width = size + "px";
+        p.style.height = size + "px";
+        p.style.borderRadius = "50%";
+        p.style.background = colors[Math.floor(Math.random() * colors.length)];
+        p.style.left = (30 + Math.random() * 40) + "%";
+        p.style.top = (30 + Math.random() * 40) + "%";
+        p.style.setProperty("--tx", (Math.random() - 0.5) * 300 + "px");
+        p.style.setProperty("--ty", (Math.random() - 0.5) * 300 + "px");
+        document.body.appendChild(p);
+        setTimeout(() => p.remove(), 1600);
+      }, i * 25);
+    }
+  }
+
+  function showWinOverlay() {
+    const overlay = document.createElement("div");
+    overlay.className = "win-overlay";
+    overlay.id = "winOverlay";
+    overlay.innerHTML =
+      "<div class=\"win-dialog\">" +
+        "<h2>🎉 恭喜通关!</h2>" +
+        "<p>你成功求出了图的传递闭包</p>" +
+        "<p style=\"font-size:0.85rem;color:#888;\">" +
+          "初始边: " + initEdges.length + " 条 | 你添加了: " + playerEdges.length + " 条" +
+        "</p>" +
+        "<button class=\"btn btn-generate\" onclick=\"document.getElementById('winOverlay').remove(); resetGame();\"" +
+          " style=\"margin-top:12px;\">再来一局</button>" +
+      "</div>";
+    document.body.appendChild(overlay);
+  }
+
+  function removeWinOverlay() {
+    const overlay = document.getElementById("winOverlay");
+    if (overlay) overlay.remove();
+  }
+
+  btnGenerate.addEventListener("click", () => {
+    const n = parseInt(nodeCountInput.value, 10);
+    if (isNaN(n) || n < 1 || n > 20) {
+      showToast("请输入 1 到 20 之间的数字", "error");
+      return;
+    }
+    removeWinOverlay();
+    generateGraph(n);
+  });
+
+  btnReset.addEventListener("click", resetGame);
+  btnUndo.addEventListener("click", undoLastEdge);
+  btnHint.addEventListener("click", showHint);
+
+  nodeCountInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      btnGenerate.click();
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      selectedNode = -1;
+      hintNode = -1;
+      draw();
+    }
+    if (e.ctrlKey && e.key === "z") {
+      e.preventDefault();
+      undoLastEdge();
+    }
+    if (e.key === "h" && !e.ctrlKey && !e.metaKey && document.activeElement === document.body) {
+      showHint();
+    }
+  });
+
+  resizeCanvas();
+  draw();
+})();
+</script>
+</body>
+</html>
